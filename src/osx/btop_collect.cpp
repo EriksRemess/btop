@@ -191,6 +191,7 @@ namespace Cpu {
 	string cpuHz;
 	bool has_battery = true;
 	bool macM1 = false;
+	bool macM4 = false;
 	tuple<int, float, long, string> current_bat;
 
 	const array<string, 10> time_names = {"user", "nice", "system", "idle"};
@@ -263,25 +264,27 @@ namespace Cpu {
 				macM1 = true;
 			} else {
 #endif
-				// try SMC (intel)
+				// try SMC
 				Logger::debug("checking intel");
 				SMCConnection smcCon;
 				try {
-					long long t = smcCon.getTemp(-1);  // check if we have package T
-					if (t > -1) {
-						Logger::debug("intel sensors found");
-						got_sensors = true;
-						t = smcCon.getTemp(0);
-						if (t == -1) {
-							// for some macs the core offset is 1 - check if we get a sane value with 1
-							if (smcCon.getTemp(1) > -1) {
-								Logger::debug("intel sensors with offset 1");
-								core_offset = 1;
-							}
-						}
-					} else {
-						Logger::debug("no intel sensors found");
-						got_sensors = false;
+          if (get_cpuName() == "M4") {
+            got_sensors = true;
+            macM4 = true;
+          } else {
+            long long t = smcCon.getTemp(-1);  // check if we have package T
+            if (t > -1) {
+              Logger::debug("smc sensors found");
+              got_sensors = true;
+              t = smcCon.getTemp(0);
+              if (t == -1) {
+                // for some macs the core offset is 1 - check if we get a sane value with 1
+                if (smcCon.getTemp(1) > -1) {
+                  Logger::debug("smc sensors with offset 1");
+                  core_offset = 1;
+                }
+              }
+            }
 					}
 				} catch (std::runtime_error &e) {
 					// ignore, we don't have temp
@@ -304,6 +307,21 @@ namespace Cpu {
 				if (current_cpu.temp.at(0).size() > 20)
 					current_cpu.temp.at(0).pop_front();
 #endif
+			} else if (macM4) {
+				SMCConnection smcCon;
+				long long sumT = 0;
+				long long maxT = LLONG_MIN;
+				for (int core = 0; core < Shared::coreCount; core++) {
+					long long temp = smcCon.getTempM4(core);
+					if (cmp_less(core + 1, current_cpu.temp.size())) {
+						sumT += temp;
+						maxT = std::max(maxT, temp);
+						current_cpu.temp.at(core + 1).push_back(temp);
+					}
+				}
+				long long avgT = static_cast<long long>(std::round(sumT / static_cast<double>(Shared::coreCount)));
+				long long packageT = std::max(avgT, maxT);
+				current_cpu.temp.at(0).push_back(packageT);
 			} else {
 				SMCConnection smcCon;
 				int threadsPerCore = Shared::coreCount / Shared::physicalCoreCount;

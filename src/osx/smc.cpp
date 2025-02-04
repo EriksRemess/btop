@@ -80,6 +80,10 @@ namespace Cpu {
 					int intValue = val.bytes[0] * 256 + (unsigned char)val.bytes[1];
 					return static_cast<long long>(intValue / 256.0);
 				}
+				if (strcmp(val.dataType, "flt ") == 0 && val.dataSize == 4) {
+					float floatValue = *reinterpret_cast<const float*>(val.bytes);
+					return static_cast<long long>(floatValue);
+				}
 			}
 		}
 		return -1;
@@ -103,6 +107,19 @@ namespace Cpu {
 			// try again with C
 			snprintf(key, 5, "TC%1dC", KeyIndexes[core]);
 			result = getSMCTemp(key);
+		}
+		return result;
+	}
+
+	long long SMCConnection::getTempM4(int core) {
+		long long result = -1;
+		char sensorKeys[][5] = {
+			"Te05", "Te09", "Te0H", "Te0S", "Te0U", "Te0X", // Efficiency cores
+			"Tp01", "Tp05", "Tp09", "Tp0D", // Performance cores
+		};
+		size_t sensorCount = sizeof(sensorKeys) / sizeof(sensorKeys[0]);
+		if (core >= 0 && core < static_cast<int>(sensorCount)) {
+			result = getSMCTemp(sensorKeys[core]);
 		}
 		return result;
 	}
